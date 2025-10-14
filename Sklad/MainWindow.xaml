@@ -1,0 +1,27 @@
+﻿<Window x:Class="Sklad.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:Sklad"
+        mc:Ignorable="d"
+        Title="Skladový systém" Height="450" Width="400">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="30"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Skladový systém" FontSize="40" 
+                   HorizontalAlignment="Center" Margin="10"/>
+       
+        <Border BorderBrush="Brown" BorderThickness="5" Grid.Row="1"/>
+        <Button Content="AHOJ LIDI" Grid.Row="1" Margin="15" Width="150" Height="50"/>
+
+        <TextBlock Text="(c) 2025 TUCNAK" Grid.Row="2" Margin="7" 
+                   HorizontalAlignment="Right"
+                   VerticalAlignment="Center"/>
+
+    </Grid>
+</Window>
