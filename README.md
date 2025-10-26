@@ -1,3 +1,275 @@
+# Zadání Sklad (WPF, .NET 9) – README
+
+Tento dokument shrnuje **strukturu projektu** podle architektury **MVVM**, obsahuje ukázkový kód pro **Helper `RelayCommand`**, doporučení pro **Converters** a **podrobný výklad MVVM** včetně malého příkladu *Model → ViewModel → View*.
+
+---
+
+## Struktura projektu (MVVM)
+
+```text
+Sklad/
+├─ Converters/                  # Převodníky pro XAML (IValueConverter)
+│  └─ EnumDescriptionConverter.cs
+│
+├─ Globals/                     # Sdílené služby a konfigurace (UI-agnostické)
+│  └─ Globals.cs
+│
+├─ Helpers/                     # Pomocné utility (bez závislosti na konkrétním View)
+│  └─ RelayCommand.cs
+│
+├─ Images/                      # Obrázky/ikony (Build Action: Resource)
+│  ├─ Icons/
+│  └─ MainMenu/
+│
+├─ ViewModels/                  # Logika obrazovek (INotifyPropertyChanged, ICommand)
+│  └─ MainWindowViewModel.cs
+│
+└─ Views/                       # Vizuální vrstva (XAML + code-behind)
+   ├─ MainWindow.xaml
+   └─ MainWindow.xaml.cs
+```
+
+### Doporučené namespaces
+```
+Sklad.Converters
+Sklad.Globals
+Sklad.Helpers
+Sklad.ViewModels
+Sklad.Views
+```
+
+---
+
+## Helpers: `RelayCommand`
+
+`RelayCommand` je obecná implementace `ICommand`, která umožňuje ve ViewModelu snadno vystavit akce pro tlačítka a jiné prvky UI bez psaní repetitivního kódu.
+
+> Ulož do **`Helpers/RelayCommand.cs`**
+
+```csharp
+using System;
+using System.Windows.Input;
+
+namespace Sklad.Helpers
+{
+    public sealed class RelayCommand : ICommand
+    {
+        private readonly Action<object?> _execute;
+        private readonly Func<object?, bool>? _canExecute;
+
+        public RelayCommand(Action<object?> execute, Func<object?, bool>? canExecute = null)
+        {
+            _execute = execute ?? throw new ArgumentNullException(nameof(execute));
+            _canExecute = canExecute;
+        }
+
+        public bool CanExecute(object? parameter) => _canExecute?.Invoke(parameter) ?? true;
+
+        public void Execute(object? parameter) => _execute(parameter);
+
+        public event EventHandler? CanExecuteChanged
+        {
+            add    { CommandManager.RequerySuggested += value; }
+            remove { CommandManager.RequerySuggested -= value; }
+        }
+    }
+}
+```
+
+### Jak `RelayCommand` použít ve ViewModelu
+
+```csharp
+using System.Windows.Input;
+using Sklad.Helpers;
+
+namespace Sklad.ViewModels
+{
+    public class MainWindowViewModel : BaseVM // BaseVM: INotifyPropertyChanged
+    {
+        public ICommand OpenOverviewCommand { get; }
+
+        public MainWindowViewModel()
+        {
+            OpenOverviewCommand = new RelayCommand(_ => OpenOverview());
+        }
+
+        private void OpenOverview()
+        {
+            // zde čistá VM logika, např. nastavení stavů, volání služeb, navigační event apod.
+        }
+    }
+}
+```
+
+A ve **XAML**:
+```xml
+<Button Content="Otevřít přehled" Command="{Binding OpenOverviewCommand}" />
+```
+
+---
+
+## Converters: příklad registrace v `App.xaml`
+
+```xml
+<Application x:Class="Sklad.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:Sklad.Converters">
+  <Application.Resources>
+    <converters:EnumDescriptionConverter x:Key="EnumToStringConverter" />
+  </Application.Resources>
+</Application>
+```
+
+Použití v XAML:
+```xml
+<TextBlock Text="{Binding StavObjednavky, Converter={StaticResource EnumToStringConverter}}" />
+```
+
+---
+
+## MVVM – důkladné vysvětlení
+
+**MVVM (Model–View–ViewModel)** je architektonický vzor pro WPF (a další XAML technologie), který **odděluje** uživatelské rozhraní (View) od aplikační logiky a stavu (ViewModel) a od datového/doménového modelu (Model).
+
+### Role vrstev
+
+- **Model**
+  - Reprezentuje *doménová data a pravidla* (např. `Material`, `MernaJednotka`).
+  - Neřeší UI – žádné `MessageBox`, žádné `DependencyObject`.
+  - Obsahuje validace a datové kontrakty; často generován/přichází z EF Core (`DbContext` + entity).
+
+- **View (XAML + .xaml.cs)**
+  - *Jak to vypadá a reaguje.* Obsahuje deklarativní UI a vizuální chování.
+  - Může nastavit `DataContext`, reagovat na čistě vizuální události (fokus, animace).
+  - Nemá obsahovat business logiku ani přímou práci s databází.
+
+- **ViewModel**
+  - *Stav a chování pro View.*
+  - Implementuje `INotifyPropertyChanged` (příp. Fody – `[AddINotifyPropertyChangedInterface]`), vystavuje **vlastnosti** pro binding a **ICommand** pro akce.
+  - Je UI-agnostický (žádné typy z `System.Windows.*`), takže lze snadno testovat unit testy.
+  - Zpravidla používá služby/repositáře pro přístup k datům (např. přes `Globals`/DI).
+
+### Databinding a ICommand
+
+- **Binding** zajišťuje, že UI *pozoruje* ViewModel.
+  - Změna ve ViewModelu (notifikace `PropertyChanged`) aktualizuje UI bez zásahu code-behind.
+- **Commandy** (`ICommand`) vystavují akce (např. uložit, načíst, otevřít okno) bez nutnosti psát click handlery ve View.
+
+### Výhody MVVM
+
+- **Testovatelnost:** ViewModel je bez UI závislostí.
+- **Opakovatelnost** a **znovupoužitelnost**: stejné VM lze zobrazit různými View.
+- **Čistota kódu:** koncentrovaná logika, méně code-behind.
+- **Paralelní vývoj:** UX/UI designer pracuje na XAML, vývojář na VM/services.
+
+### Anti-patterns (na co pozor)
+
+- **Těžký code-behind:** business logika v `*.xaml.cs` → přesuň do VM.
+- **UI typy ve ViewModelu:** např. `Brush`, `MessageBox` → místo toho hodnoty a konvertory/eventy.
+- **Přímý EF v View:** přístup k databázi patří do služby/VM, ne do XAML/code-behind.
+
+---
+
+## Mini příklad: Model → ViewModel → View
+
+### Model (zjednodušeně)
+```csharp
+public class Material
+{
+    public int Id { get; set; }
+    public string Nazev { get; set; } = string.Empty;
+    public string Jednotka { get; set; } = "ks";
+}
+```
+
+### ViewModel
+```csharp
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using System.Windows.Input;
+using Sklad.Helpers;
+
+public class MaterialyViewModel : INotifyPropertyChanged
+{
+    public ObservableCollection<Material> Materialy { get; } = new();
+    public ICommand PridatCommand { get; }
+    private string _novyNazev = string.Empty;
+
+    public string NovyNazev
+    {
+        get => _novyNazev;
+        set { _novyNazev = value; OnPropertyChanged(); }
+    }
+
+    public MaterialyViewModel()
+    {
+        PridatCommand = new RelayCommand(_ => Pridat(), _ => !string.IsNullOrWhiteSpace(NovyNazev));
+    }
+
+    private void Pridat()
+    {
+        Materialy.Add(new Material { Id = Materialy.Count + 1, Nazev = NovyNazev, Jednotka = "ks" });
+        NovyNazev = string.Empty;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    protected void OnPropertyChanged([CallerMemberName] string? name = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+```
+
+### View (XAML)
+```xml
+<Window x:Class="Sklad.Views.MaterialyWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace=Sklad.ViewModels"
+        Title="Materiály" Height="400" Width="600">
+  <Window.DataContext>
+    <vm:MaterialyViewModel/>
+  </Window.DataContext>
+
+  <DockPanel Margin="12">
+    <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="0,0,0,8">
+      <TextBox Width="200" Text="{Binding NovyNazev, UpdateSourceTrigger=PropertyChanged}"/>
+      <Button Content="Přidat" Margin="8,0,0,0" Command="{Binding PridatCommand}"/>
+    </StackPanel>
+
+    <DataGrid ItemsSource="{Binding Materialy}" AutoGenerateColumns="False">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="Auto"/>
+        <DataGridTextColumn Header="Název" Binding="{Binding Nazev}" Width="*"/>
+        <DataGridTextColumn Header="Jednotka" Binding="{Binding Jednotka}" Width="Auto"/>
+      </DataGrid.Columns>
+    </DataGrid>
+  </DockPanel>
+</Window>
+```
+
+Všimni si:
+- View neobsahuje žádnou business logiku – jen XAML.
+- Chování je řízené z ViewModelu (`PridatCommand`, `NovyNazev`, `Materialy`).
+
+---
+
+## Checklist rychlé kontroly
+
+- [ ] `Views/` obsahuje XAML + code-behind a pouze UI logiku.
+- [ ] `ViewModels/` obsahuje stav a `ICommand`, bez UI typů.
+- [ ] `Helpers/RelayCommand.cs` funguje a je použit ve ViewModelu.
+- [ ] `Converters/` registrované v `App.xaml`.
+- [ ] Modely a data nejsou přímo ve View – přístup přes VM/služby.
+
+---
+
+© 2025 – Sklad (WPF, .NET 9), MVVM skeleton a best practices.
+
+
+
+
+
 # Sklad – WPF **Application** (.NET 9) + Entity Framework Core 9
 > **Cíl**: podle tohoto README krok‑za‑krokem klikací cestou vytvoříte školní WPF *Application* projekt (pozor: **ne „WPF App“**), připojíte EF Core 9 (SQL Server LocalDB), vytvoříte migrace, osadíte data, zobrazíte je v UI a ověříte je přímo ve Visual Studio. Součástí je i vysvětlení všech důležitých řádků kódu a pojmů (migrace, relace), plus dole sada **zadání + řešení** s bohatě okomentovaným kódem.
 
